@@ -1,0 +1,328 @@
+SAMPLES = range(1,106)
+CLUSTERS = ['nonperturb', 'perturb']
+
+
+sim_dir = '/home/lynnyi/dirichlet/sims_log_normal/'
+p_dir = sim_dir + '/sim_perturb/'
+rsem_p_dir = sim_dir+'/rsem_perturb/'
+np_dir = sim_dir + '/sim_nonperturb/'
+rsem_np_dir = sim_dir + '/rsem_nonperturb/'
+perturb_file = p_dir + '/perturb.tsv' 
+
+np_ceiling_dir = sim_dir + '/sim_nonperturb_ceiling/'
+p_ceiling_dir  = sim_dir + '/sim_perturb_ceiling/'
+
+#simulations code
+model = 'negative binomial'
+sim_genes = 'TRUE'
+frac_perturb = .3
+
+#RSEM
+RSEM_model = "/home/lynnyi/RSEM-1.3.0/exp/Trapnell_cluster1.stat/Trapnell_cluster1.model"
+#RSEM_model = '/home/lynnyi/RSEM-1.3.0/HG00171_3/HG00171_3.stat/HG00171_3.model'
+
+#kallisto pseudobatch
+index = '/home/lynnyi/indices/kallisto_index/Trapnell_index.idx' 
+kallisto = '/home/lynnyi/kallisto_del/kallisto/build/src/kallisto'
+
+batchdir = sim_dir + '/pseudo_batch/'
+batchfile = batchdir + '/batchfile.txt'
+
+#dirichlet
+dirdir = sim_dir + '/dirichlet_no_sigma/'
+detect_outlier = 'FALSE'
+df = dirdir + '/df_sim_dirichlet.csv'
+qq = dirdir + '/dirichlet_qqplot.png'
+roc = dirdir + '/roc_curve.png'
+fdr = dirdir + '/fdr_curve.png'
+
+
+bootstrap_dir = dirdir + '/bootstraps'
+num_bootstraps = 10
+
+scde_dir = sim_dir + '/scde/'
+scde_em = scde_dir + '/scde_error_models.csv'
+scde_de = scde_dir + '/scde_de.csv'
+scde_df = scde_dir + '/df_scde.csv'
+scde_qq = scde_dir + '/scde_qqplot.png'
+scde_roc = scde_dir + '/scde_roc_curve.png'
+scde_fdr = scde_dir + '/scde_fdr_curve.png'
+
+scde_gene_dir = sim_dir + '/scde_gene/'
+scde_gene_em = scde_gene_dir + '/scde_error_models.csv'
+scde_gene_de = scde_gene_dir + '/scde_de.csv'
+scde_gene_df = scde_gene_dir + '/df_scde.csv'
+scde_gene_qq = scde_gene_dir + '/scde_qqplot.png'
+scde_gene_roc = scde_gene_dir + '/scde_roc_curve.png'
+scde_gene_fdr = scde_gene_dir + '/scde_fdr_curve.png'
+
+
+rule all:
+	input:
+		df,
+		qq,
+		roc,
+		fdr,
+		expand(sim_dir + '/rsem_quant_{cluster}/{sample}/abundance.tsv', cluster=CLUSTERS, sample=SAMPLES),
+
+rule simulate:
+	output:
+		expand(sim_dir + '/sim_{cluster}/{sample}.results', sample=SAMPLES, cluster=CLUSTERS),
+		perturb_file
+	shell:
+		"""
+		echo simulating
+		mkdir -p {sim_dir}
+		mkdir -p {np_dir} {p_dir}
+		Rscript /home/lynnyi/dirichlet/R/simulating_pipeline.R {np_dir} {p_dir} {frac_perturb} {model} {sim_genes} 
+		"""
+
+rule rsem:
+	input:
+		sim_dir + '/sim_{cluster}/{sample}.results'
+	output:
+		sim_dir + '/rsem_{cluster}/{sample}.results_1.fq',
+		sim_dir + '/rsem_{cluster}/{sample}.results_2.fq'
+	params:
+		dir = sim_dir + '/rsem_{cluster}/{sample}.results'
+	shell:
+		'python /home/lynnyi/dirichlet/python/RSEM_deterministic_simulate.py {input} {params.dir} {RSEM_model}'
+
+
+rule quant_rsem:
+	input:
+		r1 = sim_dir + '/rsem_{cluster}/{sample}.results_1.fq',
+		r2 = sim_dir + '/rsem_{cluster}/{sample}.results_2.fq'
+	output:
+		sim_dir + '/rsem_quant_{cluster}/{sample}/abundance.tsv'
+	params:
+		out_dir = sim_dir + '/rsem_quant_{cluster}/{sample}/'
+	shell:
+		"""
+		mkdir -p {params.out_dir}
+		{kallisto} quant  -i {index} -o {params.out_dir} {input.r1} {input.r2}
+		"""
+
+rule bowtie_quant:
+	input:
+		r1 = sim_dir + '/rsem_{cluster}/{sample}.results_1.fq',
+		r2 = sim_dir + '/rsem_{cluster}/{sample}.results_2.fq'
+	output:
+		sim_dir + '/bowtie_{cluster}/{sample}/{sample}.isoforms.results'
+	params:
+		out_dir = sim_dir + '/bowtie_{cluster}/{sample}/',
+		o = sim_dir + '/bowtie_{cluster}/{sample}/{sample}',
+	shell:
+		"""
+		mkdir -p {params.out_dir}
+		python /home/lynnyi/dirichlet/python/RSEM_quant.py {input.r1} {input.r2} {params.o} 
+		"""
+
+rule bowtie:
+	input:
+		expand(sim_dir +'/bowtie_{cluster}/{sample}/{sample}.isoforms.results', sample=SAMPLES, cluster=CLUSTERS)
+
+rule make_batch:
+	input:
+		expand(sim_dir + '/rsem_{cluster}/{sample}.results_1.fq', cluster=CLUSTERS, sample=SAMPLES),
+		expand(sim_dir + '/rsem_{cluster}/{sample}.results_2.fq', cluster=CLUSTERS, sample=SAMPLES)
+	output:
+		batchfile
+	params:
+		py = '/home/lynnyi/dirichlet/python/make_batch.py',
+	shell:
+		"""
+		echo makingbatch
+		python {params.py} {rsem_np_dir} {rsem_p_dir} {batchfile} 
+		"""
+
+rule pseudoquant_rsem:
+	input:
+		expand(sim_dir+ '/rsem_{cluster}/{sample}.results_1.fq', cluster=CLUSTERS, sample=SAMPLES),
+		expand(sim_dir+ '/rsem_{cluster}/{sample}.results_2.fq', cluster=CLUSTERS, sample=SAMPLES),
+		batchfile
+	output:
+		batchdir + '/matrix.tsv',
+		batchdir + '/matrix.ec',
+		batchdir + '/run_info.json'
+	shell:
+		'kallisto pseudo -i {index} -t 36 -o {batchdir} -b {batchfile}'
+
+rule dirichlet:
+	input:
+		infile = batchdir + '/matrix.tsv'
+	output:
+		dirdir + '/cluster0.tsv',
+		dirdir + '/cluster1.tsv'
+	params:
+		r = '/home/lynnyi/dirichlet/R/pipeline_dirichlet.R',
+	shell:
+		"""
+		mkdir -p {dirdir}
+		Rscript {params.r} {input.infile} {dirdir} {detect_outlier}
+		"""
+
+rule bootstrap:
+	input:
+		infile = batchdir + '/matrix.tsv'
+	output:
+		expand(bootstrap_dir + '/{bootstrap}/cluster0.tsv', bootstrap=range(1,num_bootstraps)),
+		expand(bootstrap_dir + '/{bootstrap}/cluster1.tsv', bootstrap=range(1,num_bootstraps)),
+
+	params:
+		r = '/home/lynnyi/dirichlet/R/bootstrap_dirichlet.R'
+	shell:
+		"""
+		mkdir -p {bootstrap_dir}
+		Rscript {params.r} {input.infile} {bootstrap_dir} {num_bootstraps}
+		"""
+
+rule prepare_final_pseudoquant:
+	input:
+		cluster0 = dirdir + '/cluster0.tsv',
+		cluster1 = dirdir + '/cluster1.tsv',
+		ec = batchdir + '/matrix.ec'
+	output:
+		cluster0 = dirdir + '/cluster0/matrix.tsv',
+		cluster1 = dirdir + '/cluster1/matrix.tsv',
+		ec0 = dirdir + '/cluster0/matrix.ec',
+		ec1 = dirdir + '/cluster1/matrix.ec',
+		cells1 = dirdir + '/cluster0/matrix.cells',
+		cells2 = dirdir + '/cluster1/matrix.cells'
+	shell:
+		"""
+		mkdir -p {dirdir}/cluster0 {dirdir}/cluster1
+		cp {input.cluster0} {output.cluster0}
+		cp {input.cluster1} {output.cluster1}
+		cp {input.ec} {output.ec0}
+		cp {input.ec} {output.ec1}
+		python /home/lynnyi/dirichlet/python/generate_matrix_cells.py 106 {output.cells1}
+		python /home/lynnyi/dirichlet/python/generate_matrix_cells.py 106 {output.cells2}
+		"""
+
+#should break apart
+rule pseudoquant_dirichlet:
+	input:
+		cluster0 = dirdir + '/cluster0/matrix.tsv',
+		cluster1 = dirdir + '/cluster1/matrix.tsv',
+		ec0 = dirdir + '/cluster0/matrix.ec',
+		ec1 = dirdir + '/cluster1/matrix.ec',
+		cells1 = dirdir + '/cluster0/matrix.cells',
+		cells2 = dirdir + '/cluster1/matrix.cells'
+	params:
+		i0 = dirdir + '/cluster0/',
+		i1 = dirdir + '/cluster1/',
+		o0 = dirdir + '/c0_pseudoquant/',
+		o1 = dirdir + '/c1_pseudoquant/'
+	output:
+		expand(dirdir + '/c0_pseudoquant/abundance_{sample}.tsv', sample=SAMPLES),
+		expand(dirdir + '/c1_pseudoquant/abundance_{sample}.tsv', sample=SAMPLES)
+	shell:
+		"""
+		{kallisto} pseudoquant -d {params.i0} -o {params.o0} -i {index} -l 180 -s 30 -t 36 	
+		{kallisto} pseudoquant -d {params.i1} -o {params.o1} -i {index} -l 180 -s 30 -t 36
+		"""
+
+rule lrt:
+	input:
+		expand(dirdir + '/c0_pseudoquant/abundance_{sample}.tsv', sample=SAMPLES),
+		expand(dirdir + '/c1_pseudoquant/abundance_{sample}.tsv', sample=SAMPLES),
+		pt = perturb_file
+	output:
+		df = df,
+		qqplot = dirdir + '/dirichlet_qqplot.png'
+	params:
+		r = '/home/lynnyi/dirichlet/R/pipeline_sleuth.R'
+	shell:
+		'Rscript {params.r} {dirdir} {output.df} {input.pt} {output.qqplot}'
+
+rule plot_roc:
+	input:
+		df = df
+	output:
+		out1 = roc,		
+		out2 = fdr
+	params:
+		title = 'Dirichlet'
+	shell:
+		'Rscript /home/lynnyi/dirichlet/R/plot_roc.R {input.df} {output.out1} {output.out2} {params.title}'
+
+rule scde_bowtie:
+	input:
+		expand(sim_dir + '/bowtie_{cluster}/{sample}/abundance.tsv', cluster=CLUSTERS, sample=SAMPLES),
+		pt = perturb_file
+	output:
+		em = scde_em,
+		de = scde_de,
+		df = scde_df,
+		qq = scde_qq
+	params:
+		np = sim_dir + '/bowtie_nonperturb/',
+		p = sim_dir + '/bowtie_perturb/'
+	shell:
+		"""
+		mkdir -p {scde_dir}
+		Rscript /home/lynnyi/dirichlet/R/scde_pipeline.R {params.np} {params.p} {output.em} {output.de} {input.pt} {output.df} {output.qq}
+		"""
+
+
+rule scde:
+	input:
+		expand(sim_dir + '/rsem_quant_{cluster}/{sample}/abundance.tsv', cluster=CLUSTERS, sample=SAMPLES),
+		pt = perturb_file
+	output:
+		em = scde_em,
+		de = scde_de,
+		df = scde_df,
+		qq = scde_qq
+	params:
+		np = sim_dir + '/rsem_quant_nonperturb/',
+		p = sim_dir + '/rsem_quant_perturb/'
+	shell:
+		"""
+		mkdir -p {scde_dir}
+		Rscript /home/lynnyi/dirichlet/R/scde_pipeline.R {params.np} {params.p} {output.em} {output.de} {input.pt} {output.df} {output.qq}
+		"""
+
+rule scde_gene:
+	input:
+		expand(sim_dir + '/rsem_quant_{cluster}/{sample}.results/abundance.tsv', cluster=CLUSTERS, sample=SAMPLES),
+		pt = perturb_file
+	output:
+		em = scde_gene_em,
+		de = scde_gene_de,
+		df = scde_gene_df,
+		qq = scde_gene_qq
+	params:
+		np = sim_dir + '/rsem_quant_nonperturb/',
+		p = sim_dir + '/rsem_quant_perturb/'
+	shell:
+		"""
+		mkdir -p {scde_dir}
+		Rscript /home/lynnyi/dirichlet/R/scde_gene.R {params.np} {params.p} {output.em} {output.de} {input.pt} {output.df} {output.qq}
+		"""
+
+
+rule plot_roc_scde:
+	input:
+		df = scde_df
+	output:
+		out1 = scde_roc,
+		out2 = scde_fdr
+	params:
+		title = 'SCDE'
+	shell:
+		'Rscript /home/lynnyi/dirichlet/R/plot_roc.R {input.df} {output.out1} {output.out2} {params.title}'
+
+rule plot_roc_scde_gene:
+	input:
+		df = scde_gene_df
+	output:
+		out1 = scde_gene_roc,
+		out2 = scde_gene_fdr
+	params:
+		title = 'SCDE'
+	shell:
+		'Rscript /home/lynnyi/dirichlet/R/plot_roc.R {input.df} {output.out1} {output.out2} {params.title}'
+
+
