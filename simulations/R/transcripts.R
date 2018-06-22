@@ -1,17 +1,24 @@
-
-source('~/aggregationDE/R/aggregation.R')
+library(aggregation)
 library(dplyr)
 library(lmtest)
 library(tximport)
 
-base_dir <- '~/single/simulations_genes'
+args <- commandArgs(TRUE)
+base_dir <- args[[1]]
+#base_dir <- '/home/lynnyi/single/6.3_sims_exp/'
 de_dir <- file.path(base_dir, 'de')
-folders <- c('rsem_quant_nonperturb', 'rsem_quant_perturb')
-files <- sapply(folders, function(folder) sapply(1:105, function(x) file.path(base_dir, folder, paste0(x), 'abundance.h5')))
-files <- as.vector(files)
-print(length(files))
-tximp <- tximport(files, type='kallisto', txOut=TRUE)
-saveRDS(tximp, file.path(base_dir, 'tx_tximport.rds'))
+
+if(file.exists(file.path(base_dir, 'tx_tximport.rds'))){
+	print('reading tximp')
+	tximp <- readRDS(file.path(base_dir, 'tx_tximport.rds'))
+} else {	
+	folders <- c('rsem_quant_nonperturb', 'rsem_quant_perturb')
+	files <- sapply(folders, function(folder) sapply(1:105, function(x) file.path(base_dir, folder, paste0(x), 'abundance.h5')))
+	files <- as.vector(files)
+	print(length(files))
+	tximp <- tximport(files, type='kallisto', txOut=TRUE)
+	saveRDS(tximp, file.path(base_dir, 'tx_tximport.rds'))
+}
 counts <- tximp$counts
 colnames(counts) <- 1:210
 
@@ -31,7 +38,7 @@ LR <- function(counts, cutoff = 189)
 		zeros <- apply(counts, 2, function(x) sum(x ==0) > cutoff)
 		if(sum(zeros) == ncol(counts))
 		{
-			return(1)
+			return(NA)
 		}
 		counts <- counts[,!zeros]
 	}
@@ -54,15 +61,18 @@ LR_fit <- function(counts, genes)
 
 stopifnot(all(t2g$transcripts == rownames(counts)))
 counts <- t(counts)
-LR_counts <- LR_fit(counts, t2g$genes)
+LR_time <- system.time(LR_counts <- LR_fit(counts, t2g$genes))
+saveRDS(LR_time, './LR_time2.rds')
 saveRDS(LR_counts, file.path(de_dir, 'LR_tx.rds'))
 
+#TPM normalization
 tpms <- tximp$abundance
 colnames(tpms) <- 1:210
 stopifnot(all(t2g$transcripts == rownames(tpms)))
 LR_tpms <- LR_fit(t(tpms), t2g$genes)
 saveRDS(LR_tpms, file.path(de_dir, 'LR_tpms.rds'))
 
+#DESeq2 Normalization
 library(DESeq2)
 deseq_counts <- tximp$counts
 colnames(deseq_counts) <- 1:210
@@ -78,10 +88,10 @@ norm_deseq_counts <- sweep(deseq_counts, 2, sizeFactors, '/')
 LR_deseq <- LR_fit(t(norm_deseq_counts), t2g$genes)
 saveRDS(LR_deseq, file.path(de_dir, 'LR_deseq.rds'))
 
+#KS test wiht lancaster aggregation
 tests <- apply(counts, 2, function(x) ks.test(x[1:105], x[106:210]))
 pvals <- sapply(tests, function(x) x$p.value)
 table <- data.frame(pvals = pvals, genes = t2g$genes, weights = colMeans(counts))
 results <- table %>% group_by(genes) %>% summarise(pval = lancaster(pvals, weights))
 saveRDS(results, file.path(de_dir, 'lan_tx.rds'))
-
 
