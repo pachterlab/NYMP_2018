@@ -1,0 +1,4 @@
+
+'Trapnell_cluster1.model' contains the RSEM parameters used to simulate scRNA-seq reads
+'hsmm_c1tpms.rds' contains the quantifications from Trapnell et al. corresponding to the proliferating myoblasts. This experimental data is used as the basis of the simulations. 
+
