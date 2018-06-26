@@ -19,8 +19,8 @@ LR <- function(counts, cluster, filter = .9)
 		counts <- counts[,!zeros]
 	}
 	table <- data.frame(counts, cluster)
-	full <-  glm(factors~., data=table, family=binomial)
-	null <-  glm(factors~1, data=table, family=binomial)
+	full <-  glm(cluster~., data=table, family=binomial)
+	null <-  glm(cluster~1, data=table, family=binomial)
 	lrtest <- lrtest(full, null)
 	lrtest$Pr[2]
 }
