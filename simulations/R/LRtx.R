@@ -2,15 +2,16 @@ library(lmtest)
 
 LR <- function(counts, cluster, filter = .9)
 {
-	cutoff = filter*dim(counts)[[1]]
 	if(is.vector(counts))
 	{
+		cutoff = round(filter*length(counts))
 		if(sum(counts  == 0) > cutoff)
 		{
 			return(NA)
 		}
 	}
 	else{
+		cutoff = round(filter*(dim(counts)[[1]]))
 		zeros <- apply(counts, 2, function(x) sum(x ==0) > cutoff)
 		if(sum(zeros) == ncol(counts))
 		{
@@ -32,6 +33,7 @@ LR_fit <- function(counts, genes, cluster)
 {
 	table <- data.frame(genes= genes, index = 1:length(genes))
 	indices <- table %>% group_by(genes) %>% summarise(indices = list(index))
+	print(head(indices, 20))
 	pvalues <- sapply(indices$indices, function(x) {LR(counts[,x], cluster)})
 	data.frame(pvalues, genes =  indices$genes)
 }
