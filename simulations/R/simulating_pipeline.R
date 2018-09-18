@@ -1,5 +1,4 @@
-
-source('simulation_helpers.R')
+source('simulation_framework.R')
 
 args <- commandArgs(TRUE)
 np_dir <- args[[1]]

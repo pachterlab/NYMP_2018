@@ -13,7 +13,7 @@ cutoff = 150
 fit <- function(x,  model = 'negative binomial', rsem_table)
 {
 	results <- list()
-	if(names(x) != rsem_table$transcript_id)
+	if(!all.equal(names(x),rsem_table$transcript_id))
 	{
 		print('warning! rsem table order does not match.')
 	}
@@ -38,7 +38,10 @@ fit <- function(x,  model = 'negative binomial', rsem_table)
 					results <- append(results, list('zero'))
 				} else {
 					y <- log(x[[i]] + 1)
+					pzeros <- sum(y==0)/length(y)
+					y <- y[y!=0]
 					result <- glm(y~1, family=gaussian())
+					result$pzeros <- pzeros
 					results <- append(results, list(result))
 				}
 			} else {
@@ -55,22 +58,20 @@ fit <- function(x,  model = 'negative binomial', rsem_table)
 	names(results) <- names(x)
 	results
 }
-#choose genes with only all nonzerotranscripts
+
+
+#can perturb genes with some zero transcripts - only nonzero transcripts get perturbed
 choose_genes_to_perturb <- function(fits, fraction)
 {
 	transcript_names <- names(fits)
-	zeros <- sapply(fits, function(x) typeof(x) != "list")
-	zero_transcripts <- transcript_names[zeros]
+	nonzeros <- sapply(fits, function(x) typeof(x) == "list")
+	nonzero_transcripts <- transcript_names[nonzeros]
 
 	mart <- biomaRt::useMart(biomart = "ENSEMBL_MART_ENSEMBL", dataset = "hsapiens_gene_ensembl", host = 'ensembl.org')
-	t2g <- biomaRt::getBM(attributes = c("ensembl_transcript_id", "ensembl_gene_id",  "external_gene_name"), mart = mart)
-	t2g <- t2g[t2g$ensembl_transcript_id %in% names(fits),] 
-	t2g_zero <- t2g[t2g$ensembl_transcript_id %in% zero_transcripts,]
-	zero_genes <- unique(t2g_zero$external_gene_name)
 
-	# select only genes without zero transcript
-	t2g_nonzero <- t2g[!t2g$external_gene_name %in%  zero_genes, ]	
-	nonzero_genes <- unique(t2g_nonzero$external_gene_name)
+	t2g <- biomaRt::getBM(attributes = c("ensembl_transcript_id", "ensembl_gene_id",  "external_gene_name"), mart = mart)
+	t2g_nonzero <- t2g[t2g$ensembl_transcript_id %in% nonzero_transcripts,]
+	nonzero_genes <- unique(t2g_nonzero$ensembl_gene_id)
 	num_nonzero_genes <- length(nonzero_genes)
 	num_sample <- round(num_nonzero_genes * fraction)
 	indices <- sample(1:num_nonzero_genes, num_sample, replace=FALSE)
@@ -79,16 +80,16 @@ choose_genes_to_perturb <- function(fits, fraction)
 
 	#only perturb genes that are nonzero
 	#transcript to gene table
-	t2g_perturb <- t2g_nonzero[t2g_nonzero$external_gene_name%in% perturbed_genes, ]
+	t2g_perturb <- t2g_nonzero[t2g_nonzero$ensembl_gene_id %in% perturbed_genes, ]
 	perturb_gene_table <- data.frame(perturbed_genes = perturbed_genes, effect_sizes = effect_sizes)
 	t2g_perturb$perturbed_transcripts <- t2g_perturb$ensembl_transcript_id
-	t2g_perturb$perturbed_genes<- t2g_perturb$external_gene_name
+	t2g_perturb$perturbed_genes<- t2g_perturb$ensembl_gene_id
 	t2g_perturb <- merge(t2g_perturb, perturb_gene_table, by=c('perturbed_genes'), left.all = TRUE) 
 	#perturb_table required perturbed_transcripts and effect_sizes
-	t2g_perturb
+	t2g_perturb	
 }
 
-
+#
 #select nonzero transcripts to perturb, return indices based on list of fits
 choose_transcripts_to_perturb <- function(fits, fraction)
 {
@@ -169,12 +170,16 @@ simulate_from_lognormal<- function(fit, nsamples, transcript_id, perturb_table)
 			samples <- rnorm(nsamples, mean=mean+effect_size, sd=sd)
 			samples <- as.vector(exp(samples)-1)
 			samples[samples<0] <- 0 
+			zeros <- sample(1:nsamples, round(fit$pzeros*nsamples))
+			samples[zeros] <- 0
 			return(samples)
 		}
 		else {
 			samples <- rnorm(nsamples, mean=mean, sd=sd)
 			samples <- as.vector(exp(samples) -1)
 			samples[samples<0] <- 0
+			zeros <- sample(1:nsamples, round(fit$pzeros*nsamples))
+			samples[zeros] <- 0
 			return(samples)
 		}
 	}
