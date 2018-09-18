@@ -1,4 +1,5 @@
 library(aggregation)
+source('deseq_norm.R')
 
 make_tcc_to_gene_map <- function(transcripts, map)
 {
@@ -48,7 +49,6 @@ print(dim(m))
 if(do_deseq_norm)
 {
 	print('normalizing')
-	source('~/single/R/deseq_norm.R')
 	m <- t(deseq_norm(t(m)))
 }
 

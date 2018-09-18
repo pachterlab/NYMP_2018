@@ -1,7 +1,9 @@
 SAMPLES = range(1,106)
 CLUSTERS = ['nonperturb', 'perturb']
 
-sim_dir = '/home/lynnyi/single/sim_dir/'
+#sim_dir = '/home/lynnyi/single/6.3_sims_exp/'
+sim_dir = '/home/lynnyi/single/6.1_sims_transcripts/'
+#sim_dir = '/home/lynnyi/single/5.22_sims_genes/'
 p_dir = sim_dir + '/sim_perturb/'
 rsem_p_dir = sim_dir+'/rsem_perturb/'
 np_dir = sim_dir + '/sim_nonperturb/'
@@ -17,7 +19,9 @@ RSEM_model = "/home/lynnyi/RSEM-1.3.0/exp/Trapnell_cluster1.stat/Trapnell_cluste
 
 #kallisto pseudobatch
 index = '/home/lynnyi/indices/kallisto_index/Trapnell_index.idx' 
+kallisto = '/home/lynnyi/kallisto_del/kallisto/build/src/kallisto'
 kallisto42 = '/home/lynnyi/kallisto_linux-v0.42.5/kallisto'
+
 batchdir = sim_dir + '/pseudo_batch/'
 batchfile = batchdir + '/batchfile.txt'
 
@@ -31,115 +35,78 @@ scde_fdr = scde_dir + '/scde_fdr_curve.png'
 
 rule all:
 	input:
-		batchfile,
-		expand(sim_dir + '/rsem_quant_{cluster}/{sample}/abundance.tsv', cluster=CLUSTERS, sample=SAMPLES),
-		batchdir + '/matrix.tsv'
+		sim_dir + 'fdrs.tiff',
 
-rule simulate:
-	output:
-		expand(sim_dir + '/sim_{cluster}/{sample}.results', sample=SAMPLES, cluster=CLUSTERS),
-	shell:
-		"""
-		echo simulating
-		mkdir -p {sim_dir}
-		mkdir -p {np_dir} {p_dir}
-		Rscript /home/lynnyi/single/sims/simulating_pipeline.R {np_dir} {p_dir} {model} {sim_genes} 
-		"""
-
-rule rsem:
-    input:
-    	sim_dir + '/sim_{cluster}/{sample}.results'
-    output:
-    	sim_dir + '/rsem_{cluster}/{sample}.results_1.fq',
-        sim_dir + '/rsem_{cluster}/{sample}.results_2.fq'
-    params:
-    	dir = sim_dir + '/rsem_{cluster}/{sample}.results'
-    shell:
-    	'python /home/lynnyi/dirichlet/python/RSEM_simulate.py {input} {params.dir}'
-
-
-rule make_batch:
-	input:
-		expand(sim_dir + '/rsem_{cluster}/{sample}.results_1.fq', cluster=CLUSTERS, sample=SAMPLES),
-		expand(sim_dir + '/rsem_{cluster}/{sample}.results_2.fq', cluster=CLUSTERS, sample=SAMPLES)
-	output:
-		batchfile
-	params:
-		py = '/home/lynnyi/dirichlet/python/make_batch.py',
-	shell:
-		"""
-		echo makingbatch
-		python {params.py} {rsem_np_dir} {rsem_p_dir} {batchfile} 
-		"""
-
-rule pseudoquant_rsem:
-	input:
-		expand(sim_dir+ '/rsem_{cluster}/{sample}.results_1.fq', cluster=CLUSTERS, sample=SAMPLES),
-		expand(sim_dir+ '/rsem_{cluster}/{sample}.results_2.fq', cluster=CLUSTERS, sample=SAMPLES),
-		batchfile
-	output:
-		batchdir + '/matrix.tsv',
-		batchdir + '/matrix.ec',
-		batchdir + '/run_info.json'
-	shell:
-		'{kallisto42} pseudo -i {index} -t 36 -o {batchdir} -b {batchfile}'
-
-rule quant_rsem:
-    input:
-        r1 = sim_dir + '/rsem_{cluster}/{sample}.results_1.fq',
-        r2 = sim_dir + '/rsem_{cluster}/{sample}.results_2.fq'
-    output:
-    	sim_dir + '/rsem_quant_{cluster}/{sample}/abundance.tsv'
-    params:
-    	out_dir = sim_dir + '/rsem_quant_{cluster}/{sample}/'
-    shell:
-    	"""
-    	mkdir -p {params.out_dir}
-    	{kallisto42} quant  -i {index} -o {params.out_dir} {input.r1} {input.r2}
-    	"""
 
 rule run_seurat:
-    input:
-	sim_dir + '/rsem_{cluster}/{sample}.results_1.fq',
-	sim_dir + '/rsem_{cluster}/{sample}.results_2.fq'	
-    output:
-	sim_dir + '/de/deseq2.rds',
-	sim_dir + '/de/tobit.rds',
-	sim_dir + /de/mast.rds'
-    shell:
-	"""
-	Rscript R/seurat.R {sim_dir}
-	"""
+	input:
+		expand(sim_dir + '/rsem_quant_{cluster}/{sample}/abundance.tsv', cluster=CLUSTERS, sample=SAMPLES),
+		expand(sim_dir + '/rsem_quant_{cluster}/{sample}/abundance.tsv', cluster=CLUSTERS, sample=SAMPLES),
+	output:
+		sim_dir + '/de/deseq2.rds',
+		sim_dir + '/de/tobit.rds',
+		sim_dir + '/de/mast.rds',
+	shell:
+		"""
+		Rscript R/seurat.R {sim_dir}
+		"""
 
+#can choose to normalize or not
 rule LR_tccs:
-    input:
-	batch_dir + '/matrix.tsv'
-    output:
-	sim_dir + '/de/LR.rds'
-    shell:
-	"""
-	Rscript R/tcc.R {sim_dir}
-	"""
+	input:
+		batchdir + '/matrix.tsv'
+	output:
+		sim_dir + '/de/LR_tccs.rds'
+	shell:
+		"""
+		Rscript R/tcc.R {sim_dir}
+		"""
 
+#performs all normalizations on transcripts by default
 rule LR_transcripts:
-    input:
-	expand(sim_dir + '/rsem_quant_{cluster}/{sample}/abundance.tsv', cluster=CLUSTERS, sample=SAMPLES),	
-    output:
-	sim_dir + '/de/LR_tx.rds'
-    shell:
-	"""
-	Rscript R/transcripts.R {sim_dir}
-	"""
+	input:
+		expand(sim_dir + '/rsem_quant_{cluster}/{sample}/abundance.tsv', cluster=CLUSTERS, sample=SAMPLES),	
+	output:
+		sim_dir + '/de/LR_tx.rds',
+		sim_dir + '/de/LR_deseq.rds'
+	shell:
+		"""
+		Rscript R/transcripts.R {sim_dir}
+		"""
+
+rule LR_gene:
+	input:
+		sim_dir + 'tximport.rds',
+	output:
+		sim_dir + '/de/gene.rds'
+	shell:
+		"""
+		Rscript R/gene.R {sim_dir}
+		"""
+
+rule scde:
+	input:
+		sim_dir + 'tximport.rds',
+	output:
+		sim_dir + '/de/scde.rds'
+	shell:
+		"""
+		Rscript /home/scde/scde.R {sim_dir}
+		"""
 
 rule roc:
-    input:
-	sim_dir + '/de/mast.rds',
-	sim_dir + '/de/scde.rds',
-	sim_dir + '/de/LR.rds',
-	sim_dir + '/de/LR_tccs.rds'
-    output:
-	sim_dir + 'fdrs.png'
-    shell:
-	"""
-	Rscript R/roc.R {sim_dir}
-	"""
+	input:
+		sim_dir + '/de/mast.rds',
+		sim_dir + '/de/scde.rds',
+		sim_dir + '/de/LR_tccs.rds',
+		sim_dir + '/de/LR_tx.rds',
+		sim_dir + '/de/LR_deseq.rds',
+		sim_dir + '/de/LR_univariate.rds',
+		sim_dir + '/de/LR_univariate_deseq.rds',
+		
+	output:
+		sim_dir + 'fdrs.tiff'
+	shell:
+		"""
+		Rscript R/roc.R {sim_dir}
+		"""
