@@ -1,4 +1,4 @@
-
+#method of deseq normalization
 library(DESeq2)
 
 deseq_norm <- function(m)
