@@ -1,5 +1,3 @@
-#Perform logistic regression on gene counts for simulations
-
 library(tximport)
 library(lmtest)
 library(dplyr)
