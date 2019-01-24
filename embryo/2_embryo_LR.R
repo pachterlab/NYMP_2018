@@ -1,4 +1,6 @@
 
+library(MultiAssayExperiment)
+
 # Load and parse data ------------------------------------------------
 data <- readRDS('/home/lynnyi/NYMP_2018/embryo/EMTAB3929.rds')
 tx <- experiments(data)[['tx']]
