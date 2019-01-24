@@ -1,4 +1,3 @@
-source('../R/LRtx.R')
 
 # Load and parse data ------------------------------------------------
 data <- readRDS('/home/lynnyi/NYMP_2018/embryo/EMTAB3929.rds')
@@ -19,10 +18,10 @@ tx_counts <- tx_counts[match(t2g$ensembl_transcript_id,rownames(tx_counts)), ]
 all.equal(t2g$ensembl_transcript_id, rownames(tx_counts))
 
 # Perform logistic regression on transcript quantifications -----------
-source('~/NYMP_2018/simulations/R/LRtx.R')
-source('~/NYMP_2018/simulations/R/deseq_norm.R')
+source('../LRtx.R')
+source('~/NYMP_2018/simulations/RSEM/R/deseq_norm.R')
 tx_counts_norm <- deseq_norm(tx_counts)
 day <- as.factor(c(rep(0, 81), rep(1, 190)))
-LR <- LR_fit(t(tx_counts_norm), t2g$ensembl_gene_id, day, filter=.9)
+LR <- LR_fit(t(tx_counts_norm), t2g$ensembl_gene_id, day, .9)
 saveRDS('./LR.rds')
 
