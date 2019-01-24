@@ -20,10 +20,10 @@ tx_counts <- tx_counts[match(t2g$ensembl_transcript_id,rownames(tx_counts)), ]
 all.equal(t2g$ensembl_transcript_id, rownames(tx_counts))
 
 # Perform logistic regression on transcript quantifications -----------
-source('../LRtx.R')
+source('./LRtx.R')
 source('~/NYMP_2018/simulations/RSEM/R/deseq_norm.R')
 tx_counts_norm <- deseq_norm(tx_counts)
 day <- as.factor(c(rep(0, 81), rep(1, 190)))
-LR <- LR_fit(t(tx_counts_norm), t2g$ensembl_gene_id, day, .9)
-saveRDS('./LR.rds')
+LR_results <- LR_fit(t(tx_counts_norm), t2g$ensembl_gene_id, day, .9)
+saveRDS(LR_results, './LR.rds')
 
