@@ -8,5 +8,5 @@ For tutorials on using logistic regression for CD45, one can use 10x_example-log
 For the simulations and analysis in R, simulations/RSEM/R provides the R code for performing logistic regression. The Snakefile contains an overview of the workflow, from creating the simulations to running the analysis and plotting benchmark curves.
 
 ## Accessing simulation data
-Due to the large size of the simulations, we placed the quantifications and counts for the simulations in a separate figshare repository: https://figshare.com/account/projects/38897/articles/7108364
+Due to the large size of the simulations, we placed the quantifications and counts for the simulations in a separate figshare repository: https://figshare.com/articles/Single_Cell_RNA-Seq_Simulations_for_Ntranos_Yi_et_al_2019/7108364
 
